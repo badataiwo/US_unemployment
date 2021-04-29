@@ -1,0 +1,769 @@
+---
+title: "Unemployment Project"
+author: "Taiwo,Silvia,Lihn,Veena"
+date: "4/10/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include = FALSE}
+library(ggplot2) # for autoplot()
+library(fpp2)
+library(forcats)
+library(tsoutliers)
+library(TSEntropies)
+library(nonlinearTseries)
+library(TSclust)
+library(prophet)
+```
+
+
+```{r}
+#unempdata <- read.csv("D:/Bentley University MSMA/4 SPRING 2021/MA 611-SN1 - Time Series Analysis/MA 611 Final Project/Project data_Fred_20210404.csv", header = TRUE)
+#View(unempdata)
+
+
+
+unempdata <- read.csv("D:/Bentley University MSMA/4 SPRING 2021/MA 611-SN1 - Time Series Analysis/MA 611 Final Project/Project data_Fred_20210404_gender.csv", header = TRUE)
+unempdata <- transform(unempdata, CPI = as.numeric(CPI))
+dim(unempdata)
+```
+
+```{r}
+unemp.ts <- ts(unempdata[,2], start = c(1960,1),fr = 4)
+gdp.ts <- ts(unempdata[,3], start = c(1960,1), fr = 4)
+fdi.ts <- ts(unempdata[,4], start = c(1960,1), fr = 4)
+cpi.ts <- ts(unempdata[,5], start = c(1960,1), fr = 4)
+labf.ts <- ts(unempdata[,6], start = c(1960,1), fr = 4)
+male.ts <- ts(unempdata[,7], start = c(1960,1), fr = 4)
+female.ts <- ts(unempdata[,8], start = c(1960,1), fr = 4)
+gdpGR.ts <- ts(unempdata[,9], start = c(1960,1), fr = 4)
+
+train.unemp <- window(unemp.ts, end = end(unemp.ts) - c(0, 62))
+train.gdp <- window(gdp.ts, end = end(gdp.ts) - c(0, 62))
+train.fdi <- window(fdi.ts, end = end(fdi.ts) - c(0, 62))
+train.cpi <- window(cpi.ts, end = end(cpi.ts) - c(0, 62))
+train.gdpGR <- window(gdpGR.ts, end = end(gdpGR.ts) - c(0, 62))
+
+length(unemp.ts)
+SampEn(unemp.ts)
+length(train.unemp)
+length(train.gdp)
+```
+
+```{r}
+autoplot(unemp.ts) 
+autoplot(train.unemp)
+autoplot(gdp.ts) 
+autoplot(fdi.ts)
+autoplot(cpi.ts)
+autoplot(gdpGR.ts)
+
+
+autoplot(cbind(male.ts, female.ts, unemp.ts),facets = T) + geom_smooth()
+autoplot(cbind(male.ts, female.ts, unemp.ts),facets = F) + geom_smooth()
+autoplot(cbind(unemp.ts, train.unemp))
+autoplot(cbind(labf.ts, unemp.ts), facets = T)
+```
+
+Check for outliers.
+
+```{r}
+tsoutliers(unemp.ts)
+```
+
+These outliers are for Q2 and Q3 2020 and correspond to the effects
+
+```{r}
+ndiffs(train.unemp)
+nsdiffs(train.unemp)
+SampEn(train.unemp)
+nonlinearityTest(train.unemp)
+```
+
+# Models
+
+```{r}
+autoplot(cbind(unemp.ts, train.unemp)) + ylab("unemployment rate")+ ggtitle("Partitioning the US Unemployment Rate time series into train and test subsets.")
+ggPacf(train.unemp)
+
+BoxCox.lambda(train.unemp)
+(naive.un <- naive(train.unemp, h = 20, lambda = "auto"))
+(snaive.un <- snaive(train.unemp, h = 20, lambda = "auto"))
+(stl.rw.un <- stlf(train.unemp, h = 20, lambda = "auto"))
+(ets.un <- ets(train.unemp, lambda = "auto"))
+(arima.un <- auto.arima(train.unemp, stepwise = FALSE, lambda = "auto"))
+(arima.un.sw <- auto.arima(train.unemp, stepwise = TRUE, lambda = "auto"))
+(stlm.un <- stlm(train.unemp, lambda = "auto"))
+
+#(arima211111 <- Arima(train.unemp, order = c(2,1,1), seasonal = c(1,1,1), lambda = "auto")) #worse
+#(arima201111 <- Arima(train.unemp, order = c(2,0,1), seasonal = c(1,1,1), lambda = "auto")) # did not improve but unsign.
+#(arima201011 <- Arima(train.unemp, order = c(2,0,1), seasonal = c(0,1,1), lambda = "auto")) # improved
+#(arima211011 <- Arima(train.unemp, order = c(2,1,1), seasonal = c(0,1,1), lambda = "auto")) # even better mase on test but little worse on residuals
+
+(arima.reg.un <- auto.arima(train.unemp, xreg = train.gdpGR, stepwise = TRUE, lambda = "auto"))
+#(nnet.un <- nnetar(train.unemp, lambda = "auto"))
+#bm <- baggedModel(train.unemp, bootstrapped_series = bld.mbb.bootstrap(train.unemp, 15), lambda = "auto")
+#bm.reg <- baggedModel(train.unemp, bootstrapped_series = bld.mbb.bootstrap(train.unemp, 15), fn = auto.arima, xreg = train.gdpGR, lambda = "auto")
+
+accuracy(forecast(naive.un), unemp.ts)
+accuracy(forecast(snaive.un), unemp.ts)
+accuracy(forecast(stl.rw.un), unemp.ts)
+accuracy(forecast(ets.un), unemp.ts)
+accuracy(forecast(arima.un), unemp.ts)
+accuracy(forecast(arima.un.sw), unemp.ts)
+accuracy(forecast(stlm.un), unemp.ts)
+accuracy(forecast(arima.reg.un, xreg = train.gdpGR), unemp.ts)
+
+checkresiduals(naive.un)
+checkresiduals(snaive.un)
+checkresiduals(stl.rw.un)
+checkresiduals(ets.un)
+checkresiduals(arima.un)
+checkresiduals(arima.un.sw)
+
+#accuracy(forecast(arima.reg.un, xreg = train.gdpGR), unemp.ts)
+#accuracy(forecast(nnet.un), unemp.ts)
+#accuracy(forecast(bm),unemp.ts)
+#accuracy(forecast(bm.reg, xreg = train.gdpGR), unemp.ts)
+
+cor(train.unemp, train.gdpGR)
+cor(train.unemp, train.cpi)
+cor(train.unemp, train.fdi)
+#cor(train.unemp, train.)
+```
+
+
+```{r}
+forecast(naive.un)
+forecast(snaive.un)
+forecast(stl.rw.un)
+forecast(ets.un)
+forecast(arima.un)
+forecast(arima.un.sw)
+
+
+autoplot(train.unemp)+ autolayer(fitted(naive.un)) + autolayer(naive.un)+ 
+  ylab("unemployment rate") + ggtitle("Forecast US Unemployment with Naive Model")
+
+autoplot(train.unemp) + autolayer(fitted(snaive.un)) + autolayer(snaive.un) + 
+  ylab("unemployment rate") + ggtitle("Forecast US Unemployment with Seasonal Naive Model")
+
+autoplot(train.unemp) + autolayer(fitted(stl.rw.un)) + autolayer(stl.rw.un) + 
+  ylab("unemployment rate") + ggtitle("Forecast US Unemployment with Random Walk Model")
+
+autoplot(train.unemp) + autolayer(fitted(ets.un)) + autolayer(forecast(ets.un, h = 20))+ 
+  ylab("unemployment rate") + ggtitle("Forecast US Unemployment with ETS Model")
+
+autoplot(train.unemp) + autolayer(fitted(arima.un)) + autolayer(forecast(arima.un, h = 20))+ 
+  ylab("unemployment rate") + ggtitle("Forecast US Unemployment with Brute Force Arima Model")
+
+autoplot(train.unemp) + autolayer(fitted(arima.un.sw)) + autolayer(forecast(arima.un.sw, h = 20))+
+  ylab("unemployment rate") + ggtitle("Forecast US Unemployment with Stepwise Arima Model")
+
+
+```
+
+
+
+# In Sample Diebold Mariano Test Matrix
+
+```{r}
+#---Coding convenience---#
+m=list()
+m[[1]]=naive.un
+m[[2]]=snaive.un
+m[[3]]=stl.rw.un
+m[[4]]=ets.un
+m[[5]]=arima.un
+m[[6]]=arima.un.sw
+
+m
+
+###---Fixing the diagonal issue----##
+
+Pval.Matrix.diag=matrix(0,length(m),length(m))
+for(i in 1:length(m))
+{
+  for(j in 1:length(m))
+  {
+    if(j==i)
+    {
+      Pval.Matrix.diag[i,j]=1
+    }
+    else
+    {
+      Pval.Matrix.diag[i,j]=dm.test(residuals(m[[i]]),residuals(m[[j]]),alternative = c("greater"),h=1)$p.value
+    }
+  }
+  
+}
+Pval.Matrix.diag
+rownames(Pval.Matrix.diag)<-c("NAIVE", "SNAIVE", "STL.RW", "ETS","ARIMA.SW","ARIMA.BF")
+colnames(Pval.Matrix.diag)<-c("NAIVE", "SNAIVE", "STL.RW", "ETS","ARIMA.SW","ARIMA.BF")
+Pval.Matrix.diag
+
+heatmap(Pval.Matrix.diag)
+library("pheatmap")
+pheatmap(Pval.Matrix.diag, display_numbers = T)
+
+#### in-sample test ---- ####
+
+dm.test(residuals(arima.un),residuals(arima.reg.un),h=1)$p.value
+```
+
+# Out Of Sample Diebold Mariano Test Matrix
+
+```{r}
+###---Test on out of sample forecasts---###
+
+#---Naive modeling---#
+test.unemp <- window(unemp.ts, start = c(2005, 3))
+test.gdpGR <- window(gdpGR.ts, start = c(2005, 3))
+
+naive2 <- naive(test.unemp, model = naive.un)
+snaive2 <- snaive(test.unemp,model = snaive.un)
+stl.rw2 <- stlm(test.unemp, model = stl.rw.un)
+ets2 <- ets(test.unemp, model = ets.un)
+arima2 <- Arima(test.unemp, model = arima.un)
+arima.sw2 <- Arima(test.unemp, model = arima.un.sw)
+
+accuracy(naive2)
+accuracy(snaive2)
+accuracy(stl.rw2)
+accuracy(ets2)
+accuracy(arima2)
+accuracy(arima.sw2)
+
+m=list()
+m[[1]]=naive2
+m[[2]]=snaive2
+m[[3]]=stl.rw2
+m[[4]]=ets2
+m[[5]]=arima2
+m[[6]]=arima.sw2
+
+m
+###---Fixing the diagonal issue----##
+
+Pval.Matrix.diag=matrix(0,length(m),length(m))
+for(i in 1:length(m))
+{
+  for(j in 1:length(m))
+  {
+    if(j==i)
+    {
+      Pval.Matrix.diag[i,j]=1
+    }
+    else
+    {
+      Pval.Matrix.diag[i,j]=dm.test(residuals(m[[i]]),residuals(m[[j]]),alternative = c("two.sided"),h=1)$p.value
+    }
+  }
+  
+}
+Pval.Matrix.diag
+rownames(Pval.Matrix.diag)<-c("NAIVE", "SNAIVE", "STL.RW", "ETS","ARIMA.SW","ARIMA.BF")
+colnames(Pval.Matrix.diag)<-c("NAIVE", "SNAIVE", "STL.RW", "ETS","ARIMA.SW","ARIMA.BF")
+Pval.Matrix.diag
+
+heatmap(Pval.Matrix.diag)
+library("pheatmap")
+pheatmap(Pval.Matrix.diag, display_numbers = T)
+
+```
+
+
+```{r}
+##########
+#--Rolling window--#
+##########
+stlf(train.unemp, lambda = "auto")
+ets(train.unemp, model = "AAA", damped = TRUE, lambda = "auto")
+Arima(train.unemp, order = c(2,0,1), seasonal = c(1,1,1), lambda = "auto", include.drift = FALSE)
+Arima(train.unemp, order = c(3,0,2), seasonal = c(1,1,1), lambda = "auto", include.drift = FALSE)
+
+f.stl.rw<-function(x,h){
+  forecast(stlf(x, lambda = "auto"), h = h)
+}
+
+f.ets<-function(x,h){
+  forecast(ets(x, model = "AAA", damped = TRUE, lambda = "auto"), h = h)
+}
+
+f.arima.bf<-function(x,h){
+  forecast(Arima(x,order = c(2,0,1), seasonal = c(1,1,1), lambda = "auto", include.drift = FALSE),h = h)
+}
+
+f.arima.sw<-function(x,h){
+  forecast(Arima(x,order = c(3,0,2), seasonal = c(1,1,1), lambda = "auto", include.drift = FALSE),h = h)
+}
+
+
+
+d <- train.unemp
+rollCV.stl.rw.errs <- tsCV(d, f.stl.rw, h = 1)
+rollCV.ets.errs <- tsCV(d, f.ets, h = 1)
+rollCV.arima.bf.errs <- tsCV(d, f.arima.bf, h = 1)
+rollCV.arima.sw.errs <- tsCV(d, f.arima.sw, h = 1)
+
+
+plot(seq(1,length(rollCV.stl.rw.errs),1),rollCV.stl.rw.errs,col="blue", "p",pch=19,cex=0.6,main="Rolling window CV",xlab="Size of training set",ylab="Rolling window errors")
+points(seq(1,length(rollCV.ets.errs),1),rollCV.ets.errs,col="red",pch=19,cex=0.6)
+points(seq(1,length(rollCV.arima.bf.errs),1),rollCV.arima.bf.errs,col="gold",pch=19,cex=0.6)
+points(seq(1,length(rollCV.arima.sw.errs),1),rollCV.arima.sw.errs,col="green",pch=19,cex=0.6)
+legend("bottomright",c("STL RW", "BestETS","SARIMA BF","SARIMA SW"), col=c("blue","red","gold", "green"), lty=rep(1,3))
+MSE.stl.rw <-   mean(rollCV.stl.rw.errs^2,na.rm = T)
+MSE.ets <-      mean(rollCV.ets.errs^2,na.rm = T)
+MSE.arima.bf <- mean(rollCV.arima.bf.errs^2,na.rm = T)
+MSE.arima.sw <- mean(rollCV.arima.sw.errs^2,na.rm = T)
+
+MSE.stl.rw
+MSE.ets
+MSE.arima.bf
+MSE.arima.sw
+```
+
+
+
+
+```{r}
+checkresiduals(ets.un)$p.value
+checkresiduals(arima.un)$p.value
+checkresiduals(arima201111)$p.value
+checkresiduals(arima201011)$p.value
+checkresiduals(arima211011)$p.value
+
+
+cor(train.gdpGR, train.unemp)
+cor(train.unemp, train.gdp)
+
+str(train.unemp)
+(arima.reg.un <- Arima(train.unemp, order = c(2,0,0), seasonal = c(1,1,2), lambda = "auto", include.drift = FALSE, xreg = train.gdp))
+(arima.reg.un <- auto.arima(train.unemp, xreg = train.cpi, lambda = "auto"))
+(arima.reg.un <- auto.arima(train.unemp, xreg = train.fdi, lambda = "auto"))
+
+set.seed(2022)
+ets.un <- ets(train.unemp, lambda = "auto")
+arima.un <- auto.arima(train.unemp, lambda = "auto")
+nnet.un <- nnetar(train.unemp, lambda = "auto")
+bm <- baggedModel(train.unemp, bootstrapped_series = bld.mbb.bootstrap(train.unemp, 15), lambda = "auto")
+
+
+
+cor(train.gdp, train.unemp)
+autoplot(train.gdp)
+autoplot(train.unemp)
+autoplot(diff(train.gdp))
+cor(diff(train.gdp), train.unemp[1:length(train.unemp)-1])
+mod.data <- ts(train.unemp[1:length(train.unemp)-1], start= c(1960,1), fr = 4)
+str(mod.data)
+(arima.difgdp.un <- auto.arima(mod.data, xreg = diff(train.gdp), lambda = NULL))
+autoplot(unemp.ts) + autolayer(fitted(arima.difgdp.un, xreg = diff(train.gdp))) + autolayer(forecast(arima.difgdp.un, xreg = diff(train.gdp)))
+
+
+accuracy(forecast(arima.reg.un, xreg = train.gdp), unemp.ts)
+accuracy(forecast(arima.un), unemp.ts)
+mod.act.data <- ts(unemp.ts[1:length(unemp.ts)-1], start = c(1960,1), fr = 4)
+
+accuracy(forecast(arima.difgdp.un, xreg = diff(train.gdp)), mod.act.data)
+
+str(unemp.ts[1:length(unemp.ts)-1])
+forecast(arima.difgdp.un, xreg = diff(train.gdp))
+arima.difgdp.un
+forecast(arima.reg.un, xreg = train.gdp)
+str(diff(train.gdp))
+str(train.unemp[1:length(train.unemp)-1])
+checkresiduals(arima.un)
+checkresiduals(arima.reg.un)
+checkresiduals(arima.difgdp.un)
+
+
+autoplot(train.unemp) + autolayer(fitted(ets.un))+ autolayer(fitted(arima.un)) +
+ autolayer(forecast(ets.un)) + autolayer(forecast(arima.un))
+
+autoplot(train.unemp)+autolayer(fitted(ets.un))+
+  autolayer(forecast(ets.un))
+
+autoplot(train.unemp) + autolayer(fitted(arima.un))+
+  autolayer(forecast(arima.un))
+
+autoplot(train.unemp) + autolayer(fitted(bm))+
+  autolayer(forecast(bm))
+
+forecast(ets.un)
+forecast(arima.un)
+
+```
+
+```{r}
+nonlinearityTest(train.unemp)
+```
+
+```{r}
+checkresiduals(ets.un)
+checkresiduals(arima.un)
+checkresiduals(bm)
+```
+
+```{r}
+##########
+#--Rolling window--#
+##########
+ets(train.unemp, model = "AAA", damped = TRUE, lambda = "auto")
+Arima(train.unemp, order = c(2,0,0), seasonal = c(1,1,2), lambda = "auto", include.drift = FALSE)
+set.seed(2022)
+nnetar(train.unemp,p=3,P=1,size = 2, lambda = "auto")
+set.seed(2022)
+nnetar(train.unemp, lambda = "auto")
+
+f.ets<-function(x,h){
+  forecast(ets(x, model = "AAA", damped = TRUE, lambda = "auto"), h = h)
+}
+
+f.arima<-function(x,h){
+  forecast(Arima(x,order = c(2,0,0), seasonal = c(1,1,2), lambda = "auto", include.drift = FALSE),h = h)
+}
+
+f.net<-function(x,h){
+  forecast(nnetar(x,p=3,P=1,size = 2, lambda = "auto"), h = h)
+}
+
+d <- train.unemp
+rollCV.ets.errs <- tsCV(d, f.ets, h = 1)
+rollCV.arima.errs <- tsCV(d, f.arima, h = 1)
+rollCV.nnar.errs <- tsCV(d, f.net, h = 1)
+
+plot(seq(1,length(rollCV.ets.errs),1),rollCV.ets.errs,col="blue", "p",pch=19,cex=0.6,main="Rolling window CV",xlab="Size of training set",ylab="Rolling window errors")
+points(seq(1,length(rollCV.ets.errs),1),rollCV.arima.errs,col="red",pch=19,cex=0.6)
+points(seq(1,length(rollCV.ets.errs),1),rollCV.nnar.errs,col="green",pch=19,cex=0.6)
+legend("bottom",c("BestAAdA","BestSARIMA","BestNNET"),col=c("blue","red","green"),lty=rep(1,3))
+
+MSE.ets=mean(rollCV.ets.errs^2,na.rm = T)
+MSE.arima=mean(rollCV.arima.errs^2,na.rm = T)
+MSE.net=mean(rollCV.nnar.errs^2,na.rm = T)
+
+MSE.ets
+MSE.arima
+MSE.net
+```
+
+```{r}
+
+unemp.st <- read.csv("D:/Bentley University MSMA/4 SPRING 2021/MA 611-SN1 - Time Series Analysis/MA 611 Final Project/Project data_Fred_20210404_state.csv", header = TRUE)
+dim(unemp.st)
+```
+
+```{r}
+#for (i in seq(10, dim(unemp.st)[2]))
+```
+
+# Finding structural breaks / change points. Prophet Model
+
+```{r}
+unemp.ts <- ts(unempdata[,2], start = c(1960,1),fr = 4)
+
+tail(unempdata)
+
+length(train.unemp)
+length(train.gdp)
+
+days <- c(seq(as.Date('1960/01/01'), as.Date('1999/12/31'), by = "q"), seq(as.Date('2000/01/01'), as.Date('2020/12/31'), by = "q"))
+length(days)
+dim(unempdata)
+unemp.hist <- data.frame(ds=days, y = unempdata[,2])
+
+model=prophet(unemp.hist) #---constructing the model---#
+horizon=make_future_dataframe(model, periods = 2) #---Enlarging my data set by 2 additional months--#
+forecasts=predict(model, horizon)
+#forecasts
+tail(forecasts)
+
+plot(model,forecasts,uncertainty = T,xlabel = "Time",ylabel = "Unemployment Rate") + 
+  ggtitle("Prophet Modeling. US Unemployment")
+
+prophet_plot_components(model,forecasts, uncertainty = TRUE)
+
+plot(model,forecasts,uncertainty = T,xlabel = "Time",ylabel = "Unemployment Rate")+
+  add_changepoints_to_plot(model, threshold = 0.12) +
+  ggtitle("Prophet Modeling. US Unemployment") # default threshold is 0.01
+#locator()
+```
+
+```{r}
+gdpGR.ts <- window(gdpGR.ts, start = c(1983, 3))
+train.gdpGR <- window(gdpGR.ts, end = end(gdpGR.ts) - c(0, 37))
+
+```
+
+
+```{r}
+newUnemp.ts <- window(unemp.ts, start = c(1983, 3))
+length(newUnemp.ts)
+nonlinearityTest(newUnemp.ts)
+SampEn(newUnemp.ts)
+
+unemp.ts <- newUnemp.ts
+train.unemp <- window(unemp.ts, end = end(unemp.ts) - c(0, 37))
+autoplot(cbind(unemp.ts, train.unemp))
+
+nonlinearityTest(train.unemp)
+
+BoxCox.lambda(train.unemp)
+(ets.un <- ets(train.unemp, lambda = "auto"))
+(arima.un <- auto.arima(train.unemp, lambda = "auto"))
+(arima.reg.un <- auto.arima(train.unemp, xreg = train.gdpGR, lambda = "auto"))
+(nnet.un <- nnetar(train.unemp, lambda = "auto"))
+bm <- baggedModel(train.unemp, bootstrapped_series = bld.mbb.bootstrap(train.unemp, 15), lambda = "auto")
+bm.reg <- baggedModel(train.unemp, bootstrapped_series = bld.mbb.bootstrap(train.unemp, 15), fn = auto.arima, xreg = train.gdpGR, lambda = "auto")
+
+accuracy(forecast(ets.un), unemp.ts)
+accuracy(forecast(arima.un), unemp.ts)
+accuracy(forecast(arima.reg.un, xreg = train.gdpGR), unemp.ts)
+accuracy(forecast(nnet.un), unemp.ts)
+accuracy(forecast(bm),unemp.ts)
+accuracy(forecast(bm.reg, xreg = train.gdpGR), unemp.ts)
+
+
+checkresiduals(ets.un)$p.value
+checkresiduals(arima.un)$p.value
+checkresiduals(arima.reg.un)$p.value
+#checkresiduals(nnet.un)$p.value
+#checkresiduals(bm)$p.value
+```
+
+
+# Diebold Mariano Test
+
+
+```{r}
+#### in-sample test ---- ####
+
+dm.test(residuals(arima.un),residuals(arima.reg.un),h=1)$p.value
+
+###---Test on out sample forecasts---###
+
+#---Naive modeling---#
+test <- window(unemp.ts, start = c(2011, 4))
+test.gdpGR <- window(gdpGR.ts, start = c(2011, 4))
+arima2 <- Arima(test,model = arima.un)
+arima.reg2 <- Arima(test,model = arima.reg.un, xreg = test.gdpGR)
+dm.test(residuals(arima2),residuals(arima.reg2),h=1)
+accuracy(arima2)
+accuracy(arima.reg2)
+
+```
+
+# Mles vs females
+
+```{r}
+male.ts <- ts(unempdata[,7], start = c(1960,1), fr = 4)
+female.ts <- ts(unempdata[,8], start = c(1960,1), fr = 4)
+ratio <- female.ts/male.ts
+autoplot(male.ts/female.ts)
+autoplot(male.ts/unemp.ts)
+autoplot(female.ts/unemp.ts)
+
+SampEn(ratio)
+length(ratio)
+
+```
+
+# ratio Female / Male
+
+
+```{r}
+ratio <- female.ts/male.ts
+train.ratio <- window(ratio, end = end(ratio) - c(0, 60))
+autoplot(cbind(ratio, train.ratio))
+
+nonlinearityTest(train.ratio)
+
+BoxCox.lambda(train.ratio)
+(ets.un <- ets(train.ratio, lambda = "auto"))
+(arima.un <- auto.arima(train.ratio, lambda = "auto"))
+#(arima.reg.un <- auto.arima(train.ratio, xreg = train.gdpGR, lambda = "auto"))
+(nnet.un <- nnetar(train.ratio, lambda = "auto"))
+bm <- baggedModel(train.ratio, bootstrapped_series = bld.mbb.bootstrap(train.ratio, 15), lambda = "auto")
+#bm.reg <- baggedModel(train.ratio, bootstrapped_series = bld.mbb.bootstrap(train.ratio, 15), fn = auto.arima, xreg = train.gdpGR, lambda = "auto")
+
+accuracy(forecast(ets.un), ratio)
+accuracy(forecast(arima.un), ratio)
+accuracy(forecast(arima.reg.un, xreg = train.gdpGR), ratio)
+accuracy(forecast(nnet.un), ratio)
+accuracy(forecast(bm),ratio)
+accuracy(forecast(bm.reg, xreg = train.gdpGR), ratio)
+
+
+checkresiduals(ets.un)$p.value
+checkresiduals(arima.un)$p.value
+checkresiduals(arima.reg.un)$p.value
+#checkresiduals(nnet.un)$p.value
+#checkresiduals(bm)$p.value
+
+autoplot(cbind(ratio, train.ratio))
+autoplot(train.ratio)+autolayer(forecast(ets.un, h = 80))+ ggtitle("Forecast the unemployment ration male/female with ETS")
+autoplot(train.ratio)+autolayer(forecast(arima.un, h = 80))+ ggtitle("Forecast the unemployment ration male/female with Arima")
+autoplot(train.ratio)+autolayer(forecast(nnet.un, h = 80))+ ggtitle("Forecast the unemployment ration male/female with Neural Networks")
+autoplot(train.ratio)+autolayer(forecast(bm, h = 80))+ ggtitle("Forecast the unemployment ration male/female with Bagged Model")
+```
+
+# ratio Female / Male
+
+```{r}
+ratio <- male.ts/female.ts
+train.ratio <- window(ratio, end = end(ratio) - c(0, 60))
+autoplot(cbind(ratio, train.ratio))
+
+nonlinearityTest(train.ratio)
+
+BoxCox.lambda(train.ratio)
+(ets.un <- ets(train.ratio, lambda = "auto"))
+(arima.un <- auto.arima(train.ratio, lambda = "auto"))
+#(arima.reg.un <- auto.arima(train.ratio, xreg = train.gdpGR, lambda = "auto"))
+(nnet.un <- nnetar(train.ratio, lambda = "auto"))
+bm <- baggedModel(train.ratio, bootstrapped_series = bld.mbb.bootstrap(train.ratio, 15), lambda = "auto")
+#bm.reg <- baggedModel(train.ratio, bootstrapped_series = bld.mbb.bootstrap(train.ratio, 15), fn = auto.arima, xreg = train.gdpGR, lambda = "auto")
+
+accuracy(forecast(ets.un), ratio)
+accuracy(forecast(arima.un), ratio)
+accuracy(forecast(arima.reg.un, xreg = train.gdpGR), ratio)
+accuracy(forecast(nnet.un), ratio)
+accuracy(forecast(bm),ratio)
+accuracy(forecast(bm.reg, xreg = train.gdpGR), ratio)
+
+
+checkresiduals(ets.un)$p.value
+checkresiduals(arima.un)$p.value
+checkresiduals(arima.reg.un)$p.value
+#checkresiduals(nnet.un)$p.value
+#checkresiduals(bm)$p.value
+
+autoplot(cbind(male.ts, female.ts))
+autoplot(cbind(ratio, train.ratio))
+autoplot(train.ratio)+autolayer(forecast(ets.un, h = 80))+ ggtitle("Forecast the unemployment ration male/female with ETS")
+autoplot(train.ratio)+autolayer(forecast(arima.un, h = 80))+ ggtitle("Forecast the unemployment ration male/female with Arima")
+autoplot(train.ratio)+autolayer(forecast(nnet.un, h = 80))+ ggtitle("Forecast the unemployment ration male/female with Neural Networks")
+autoplot(train.ratio)+autolayer(forecast(bm, h = 80))+ ggtitle("Forecast the unemployment ration male/female with Bagged Model")
+```
+
+# Forecast the Gap between male and female unemploment.
+
+```{r}
+gap <- female.ts - male.ts
+train.gap <- window(gap, end = end(gap) - c(0, 60))
+autoplot(cbind(gap, train.gap))
+
+nonlinearityTest(train.gap)
+
+BoxCox.lambda(train.gap)
+nnet.un <- nnetar(train.gap, lambda = "auto")
+bm <- baggedModel(train.gap, bootstrapped_series = bld.mbb.bootstrap(train.gap, 15), lambda = "auto")
+#bm.reg <- baggedModel(train.gap, bootstrapped_series = bld.mbb.bootstrap(train.gap, 15), fn = auto.arima, xreg = train.gdpGR, lambda = "auto")
+
+nnet.un <- nnetar(train.gap)
+bm <- baggedModel(train.gap, bootstrapped_series = bld.mbb.bootstrap(train.gap, 15))
+
+
+accuracy(forecast(nnet.un), gap)
+accuracy(forecast(bm),gap)
+#accuracy(forecast(bm.reg, xreg = train.gdpGR), gap)
+
+
+#checkresiduals(nnet.un)$p.value
+#checkresiduals(bm)$p.value
+
+autoplot(cbind(male.ts, female.ts))
+autoplot(cbind(gap, train.gap))
+autoplot(train.gap)+autolayer(forecast(ets.un, h = 80))+ ggtitle("Forecast the unemployment gap male/female with ETS")
+autoplot(train.gap)+autolayer(forecast(arima.un, h = 80))+ ggtitle("Forecast the unemployment gap male/female with Arima")
+autoplot(train.gap)+autolayer(forecast(nnet.un, h = 80))+ ggtitle("Forecast the unemployment gap male/female with Neural Networks")
+autoplot(train.gap)+autolayer(forecast(bm, h = 80))+ ggtitle("Forecast the unemployment gap male/female with Bagged Model")
+```
+
+
+
+# Finding structural breaks / change points. Prophet Model
+
+```{r}
+#unemp.ts <- ts(unempdata[,2], start = c(1960,1),fr = 4)
+
+#tail(unempdata)
+
+length(train.unemp)
+
+
+days <- c(seq(as.Date('1960/01/01'), as.Date('1999/12/31'), by = "q"), seq(as.Date('2000/01/01'), as.Date('2020/12/31'), by = "q"))
+length(days)
+dim(unempdata)
+gap.hist <- data.frame(ds=days, y = unempdata[,8] - unempdata[,7])
+
+model=prophet(gap.hist) #---constructing the model---#
+horizon=make_future_dataframe(model, periods = 2) #---Enlarging my data set by 2 additional months--#
+forecasts=predict(model, horizon)
+#forecasts
+tail(forecasts)
+
+plot(model,forecasts,uncertainty = T,xlabel = "Time",ylabel = "Unemployment Gap")+ggtitle("Prophet modeling on Unemployment gender gap")
+
+prophet_plot_components(model,forecasts, uncertainty = TRUE)
+
+plot(model,forecasts,uncertainty = T,xlabel = "Time",ylabel = "Unemployment Gap")+
+  add_changepoints_to_plot(model, threshold = 0.17) + ggtitle("Prophet modeling on Unemployment gender gap")  # default threshold is 0.01
+#locator()
+
+#the structural break is at Q3, 1973
+```
+
+# Gap Forecast using the structural break
+
+
+
+```{r}
+gap <- female.ts - male.ts
+gap <- window(gap, start = c(1973, 4))
+length(gap)
+train.gap <- window(gap, end = end(gap) - c(0, 48))
+autoplot(cbind(gap, train.gap)) + ylab("gender gap (fem-male") + 
+  ggtitle("US Gender Unemployment Rate Gap. Partitioning the time series into train and test subsets.")
+SampEn(train.gap) 
+ndiffs(train.gap) 
+nsdiffs(train.gap)
+ggAcf(train.gap)
+ggPacf(train.gap)
+nonlinearityTest(train.gap)
+
+BoxCox.lambda(train.gap)
+(ets.un <- ets(train.gap, lambda = "auto"))
+(arima.un <- auto.arima(train.gap, lambda = "auto"))
+#(arima.reg.un <- auto.arima(train.gap, xreg = train.gdpGR, lambda = "auto"))
+(nnet.un <- nnetar(train.gap, lambda = "auto"))
+bm <- baggedModel(train.gap, bootstrapped_series = bld.mbb.bootstrap(train.gap, 50), lambda = "auto")
+#bm.reg <- baggedModel(train.gap, bootstrapped_series = bld.mbb.bootstrap(train.gap, 15), fn = auto.arima, xreg = train.gdpGR, lambda = "auto")
+
+accuracy(forecast(ets.un), gap)
+accuracy(forecast(arima.un), gap)
+#accuracy(forecast(arima.reg.un, xreg = train.gdpGR), gap)
+accuracy(forecast(nnet.un), gap)
+accuracy(forecast(bm),gap)
+#accuracy(forecast(bm.reg, xreg = train.gdpGR), gap)
+
+autoplot(train.gap) + autolayer(fitted(nnet.un)) + autolayer(forecast(nnet.un, h = 20))+
+  ggtitle("Forecast US Unemployment with Stepwise Arima Model")
+
+checkresiduals(ets.un)$p.value
+checkresiduals(arima.un)$p.value
+checkresiduals(arima.reg.un)$p.value
+#checkresiduals(nnet.un)$p.value
+#checkresiduals(bm)$p.value
+
+autoplot(cbind(male.ts, female.ts))
+autoplot(cbind(gap, train.gap))
+autoplot(train.gap)+autolayer(forecast(ets.un, h = 80))+ ggtitle("Forecast the unemployment gap male/female with ETS")
+autoplot(train.gap)+autolayer(forecast(arima.un, h = 80))+ ggtitle("Forecast the unemployment gap male/female with Arima")
+autoplot(train.gap)+autolayer(forecast(nnet.un, h = 80))+ ggtitle("Forecast the unemployment gap male/female with Neural Networks")
+autoplot(train.gap)+autolayer(forecast(bm, h = 80))+ ggtitle("Forecast the unemployment gap male/female with Bagged Model")
+```
